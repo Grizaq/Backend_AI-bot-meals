@@ -1,5 +1,6 @@
-// /src/services/geminiService.ts
+// src/services/geminiService.ts
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import type { UserPreferences } from '../types/database.js';
 
 function getModel() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -11,49 +12,113 @@ function getModel() {
 }
 
 export interface MealHistory {
-    mealName: string;
-    date: string;
-    liked?: boolean;
+  mealName: string;
+  date: string;
+  liked?: boolean | undefined;
+  rating?: number | undefined;
+  notes?: string | undefined;
 }
 
 export interface AvailableIngredients {
-    pantry: string[];
-    fridge: string[];
+  pantry: string[];
+  fridge: string[];
+  expiringSoon?: string[];
+}
+
+export interface MealSuggestion {
+  mealName: string;
+  description: string;
+  ingredients: string[];
+  estimatedTime: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  estimatedCalories: number;
+  expiringIngredientsUsed?: string[];
+}
+
+export interface SuggestionResponse {
+  suggestions: MealSuggestion[];
+  newLikes?: string[];
+  newDislikes?: string[];
 }
 
 export async function suggestMeals(
-    ingredients: AvailableIngredients,
-    mealHistory: MealHistory[]
-): Promise<string> {
-    const prompt = `You are a helpful meal planning assistant. Based on the following information, suggest 3 diverse meal ideas.
+  ingredients: AvailableIngredients,
+  mealHistory: MealHistory[],
+  preferences?: Partial<UserPreferences>
+): Promise<SuggestionResponse> {
+  
+  const prefs: UserPreferences = {
+    userId: 'default', // Will be replaced when we add auth
+    likes: preferences?.likes || [],
+    dislikes: preferences?.dislikes || [],
+    caloriePreference: preferences?.caloriePreference,
+    updatedAt: new Date()
+  };
+  
+  const allIngredients = [...ingredients.pantry, ...ingredients.fridge];
+  const expiringSoon = ingredients.expiringSoon || [];
+  
+  const recentMeals = mealHistory.slice(0, 10);
 
-Available ingredients:
-- Pantry: ${ingredients.pantry.join(', ')}
-- Fridge: ${ingredients.fridge.join(', ')}
+  const prompt = `You are a helpful meal planning assistant. Analyze the user's preferences and suggest 3 diverse meals.
 
-Recent meal history (to avoid repetition):
-${mealHistory.map(m => `- ${m.mealName} (${m.date})${m.liked !== undefined ? ` - ${m.liked ? 'liked' : 'disliked'}` : ''}`).join('\n')}
+AVAILABLE INGREDIENTS:
+${allIngredients.join(', ')}
 
-Requirements:
-1. Use primarily the available ingredients
-2. Avoid suggesting meals similar to recent history
-3. Consider user preferences based on liked/disliked meals
-4. Keep suggestions practical and easy to make
-5. Format each suggestion with: Meal name, brief description, and main ingredients needed
+${expiringSoon.length > 0 ? `EXPIRING SOON (prioritize these): ${expiringSoon.join(', ')}` : ''}
 
-Provide the suggestions in a clear, structured format.`;
+USER PREFERENCES:
+Likes: ${prefs.likes.join(', ') || 'None specified'}
+Dislikes: ${prefs.dislikes.join(', ') || 'None specified'}
 
-    try {
-        const model = getModel();
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        return response.text();
-    } catch (error) {
-        console.error('Error calling Gemini API:', error);
-        if (error instanceof Error) {
-            console.error('Error details:', error.message);
-            console.error('Error stack:', error.stack);
-        }
-        throw error;
+RECENT MEAL HISTORY (last 10 meals):
+${recentMeals.map(m => 
+  `- ${m.mealName} (${m.date}) - Rating: ${m.rating || 'N/A'}/5, Liked: ${m.liked !== undefined ? (m.liked ? 'Yes' : 'No') : 'N/A'}${m.notes ? `, Notes: "${m.notes}"` : ''}`
+).join('\n')}
+
+INSTRUCTIONS:
+1. Suggest 3 diverse meal ideas using primarily available ingredients
+2. Prioritize ingredients expiring soon
+3. Avoid meals similar to recent history (especially low-rated or disliked ones)
+4. Consider user preferences and meal feedback notes
+5. ${prefs.caloriePreference ? `Target ${prefs.caloriePreference} calorie meals: ${prefs.caloriePreference === 'low' ? '<400 calories' : prefs.caloriePreference === 'medium' ? '400-700 calories' : '>700 calories'}` : 'Estimate calories for each meal'}
+6. If you notice new patterns in the user's preferences from the meal history, suggest new items for their likes/dislikes list
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format (no markdown, no explanations):
+{
+  "suggestions": [
+    {
+      "mealName": "Name of meal",
+      "description": "Brief description",
+      "ingredients": ["ingredient1", "ingredient2"],
+      "estimatedTime": "30 minutes",
+      "difficulty": "easy",
+      "estimatedCalories": 450,
+      "expiringIngredientsUsed": ["tomatoes"]
     }
+  ],
+  "newLikes": ["any new preference patterns you detected"],
+  "newDislikes": ["any new dislike patterns you detected"]
+}`;
+
+  try {
+    const model = getModel();
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    
+    // Remove markdown code blocks if present
+    const cleanedText = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedText) as SuggestionResponse;
+    return parsed;
+  } catch (error) {
+    console.error('Error calling Gemini API:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+    }
+    throw error;
+  }
 }
