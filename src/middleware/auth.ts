@@ -2,7 +2,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyToken, type TokenPayload } from '../services/authService.js';
 
-export interface AuthRequest extends Request {
+export interface AuthRequest<P = any> extends Request<P> {
   user?: TokenPayload;
 }
 

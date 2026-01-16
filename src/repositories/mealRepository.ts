@@ -10,7 +10,7 @@ export class MealRepository {
     if (!this.collection) {
       const db = await getDB();
       this.collection = db.collection<Meal>('meals');
-      
+
       // Create indexes
       await this.collection.createIndex({ userId: 1, createdAt: -1 });
       await this.collection.createIndex({ userId: 1, date: -1 });
@@ -24,7 +24,7 @@ export class MealRepository {
       ...meal,
       createdAt: new Date()
     };
-    
+
     const result = await collection.insertOne(newMeal);
     return { ...newMeal, _id: result.insertedId };
   }
@@ -63,7 +63,7 @@ export class MealRepository {
 
   async cleanupOldMeals(userId: string, keepCount: number = 100): Promise<number> {
     const collection = await this.getCollection();
-    
+
     // Get the 100th most recent meal date
     const meals = await collection
       .find({ userId })
@@ -71,18 +71,24 @@ export class MealRepository {
       .skip(keepCount)
       .limit(1)
       .toArray();
-    
+
     if (meals.length === 0) return 0;
-    
+
     const cutoffDate = meals[0]?.date;
     if (!cutoffDate) return 0;
-    
+
     const result = await collection.deleteMany({
       userId,
       date: { $lt: cutoffDate }
     });
-    
+
     return result.deletedCount;
+  }
+
+  async deleteMeal(mealId: string): Promise<boolean> {
+    const collection = await this.getCollection();
+    const result = await collection.deleteOne({ _id: new ObjectId(mealId) });
+    return result.deletedCount > 0;
   }
 }
 

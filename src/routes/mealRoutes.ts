@@ -4,6 +4,7 @@ import { suggestMeals, type MealHistory, type AvailableIngredients } from '../se
 import { authenticate, type AuthRequest } from '../middleware/auth.js';
 import { preferencesRepository } from '../repositories/preferencesRepository.js';
 import { mealRepository } from '../repositories/mealRepository.js';
+import type { Meal } from '../types/database.js';
 
 const router = Router();
 
@@ -26,7 +27,7 @@ router.post('/suggest', authenticate, async (req: AuthRequest, res: Response) =>
 
     // Fetch user preferences from database
     let userPrefs = await preferencesRepository.getPreferences(userId);
-    
+
     // Update calorie preference if provided
     if (caloriePreference) {
       if (!userPrefs) {
@@ -48,17 +49,22 @@ router.post('/suggest', authenticate, async (req: AuthRequest, res: Response) =>
 
     // Fetch recent meal history from database
     const recentMeals = await mealRepository.getRecentMeals(userId, 10);
-    const mealHistory: MealHistory[] = recentMeals.map(meal => ({
-      mealName: meal.mealName,
-      date: meal.date.toISOString().split('T')[0],
-      liked: meal.liked,
-      rating: meal.rating,
-      notes: meal.notes
-    }));
+    const mealHistory: MealHistory[] = recentMeals.map((meal: Meal) => {
+      const dateString = meal.date.toISOString().split('T')[0];
+      if (!dateString) throw new Error('Invalid date format');
+
+      return {
+        mealName: meal.mealName,
+        date: dateString,
+        liked: meal.liked,
+        rating: meal.rating,
+        notes: meal.notes
+      };
+    });
 
     // Get AI suggestions
     const result = await suggestMeals(
-      ingredients, 
+      ingredients,
       mealHistory,
       userPrefs || undefined
     );
@@ -204,5 +210,163 @@ router.get('/preferences', authenticate, async (req: AuthRequest, res: Response)
   }
 });
 
+// Update meal rating/feedback
+interface UpdateMealRequest {
+  rating?: number;
+  liked?: boolean;
+  notes?: string;
+}
+
+router.patch('/:mealId', authenticate, async (req: AuthRequest<{ mealId: string }>, res: Response) => {
+  try {
+    const mealId = req.params.mealId;
+    if (!mealId) {
+      res.status(400).json({ error: 'Missing mealId parameter' });
+      return;
+    }
+
+    const { rating, liked, notes } = req.body;
+    const userId = req.user!.userId;
+
+    // Verify meal belongs to user
+    const meals = await mealRepository.getMealsByUserId(userId, 1000);
+    const mealExists = meals.some(m => m._id!.toString() === mealId);
+
+    if (!mealExists) {
+      res.status(404).json({ error: 'Meal not found' });
+      return;
+    }
+
+    const updated = await mealRepository.updateMealRating(mealId, rating, liked, notes);
+
+    if (!updated) {
+      res.status(404).json({ error: 'Failed to update meal' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Meal updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating meal:', error);
+    res.status(500).json({
+      error: 'Failed to update meal',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Delete a meal
+router.delete('/:mealId', authenticate, async (req: AuthRequest<{ mealId: string }>, res: Response) => {
+  try {
+    const mealId = req.params.mealId;
+    if (!mealId) {
+      res.status(400).json({ error: 'Missing mealId parameter' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+
+    // Verify meal belongs to user before deleting
+    const meals = await mealRepository.getMealsByUserId(userId, 1000);
+    const meal = meals.find(m => m._id!.toString() === mealId);
+
+    if (!meal) {
+      res.status(404).json({ error: 'Meal not found' });
+      return;
+    }
+
+    const deleted = await mealRepository.deleteMeal(mealId);
+
+    if (!deleted) {
+      res.status(404).json({ error: 'Failed to delete meal' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Meal deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting meal:', error);
+    res.status(500).json({
+      error: 'Failed to delete meal',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Update preferences manually
+interface UpdatePreferencesRequest {
+  likes?: string[];
+  dislikes?: string[];
+  caloriePreference?: 'low' | 'medium' | 'high';
+}
+
+router.put('/preferences', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { likes, dislikes, caloriePreference } = req.body;
+    const userId = req.user!.userId;
+
+    const prefs = await preferencesRepository.createOrUpdatePreferences(
+      userId,
+      likes,
+      dislikes,
+      caloriePreference
+    );
+
+    res.json({
+      success: true,
+      preferences: {
+        likes: prefs.likes,
+        dislikes: prefs.dislikes,
+        caloriePreference: prefs.caloriePreference
+      }
+    });
+  } catch (error) {
+    console.error('Error updating preferences:', error);
+    res.status(500).json({
+      error: 'Failed to update preferences',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Delete specific preference items
+interface DeletePreferenceRequest {
+  type: 'like' | 'dislike';
+  item: string;
+}
+
+router.delete('/preferences/item', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { type, item } = req.body;
+    const userId = req.user!.userId;
+
+    if (!type || !item) {
+      res.status(400).json({ error: 'Missing required fields: type and item' });
+      return;
+    }
+
+    const deleted = await preferencesRepository.removePreferenceItem(userId, type, item);
+
+    if (!deleted) {
+      res.status(404).json({ error: 'Preference item not found' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Preference item removed successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting preference item:', error);
+    res.status(500).json({
+      error: 'Failed to delete preference item',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
 export default router;

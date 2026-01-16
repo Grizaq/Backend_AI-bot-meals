@@ -107,6 +107,25 @@ export class PreferencesRepository {
             );
         }
     }
+
+    async removePreferenceItem(
+        userId: string,
+        type: 'like' | 'dislike',
+        item: string
+    ): Promise<boolean> {
+        const collection = await this.getCollection();
+        const field = type === 'like' ? 'likes' : 'dislikes';
+
+        const result = await collection.updateOne(
+            { userId },
+            {
+                $pull: { [field]: item },
+                $set: { updatedAt: new Date() }
+            }
+        );
+
+        return result.modifiedCount > 0;
+    }
 }
 
 export const preferencesRepository = new PreferencesRepository();
