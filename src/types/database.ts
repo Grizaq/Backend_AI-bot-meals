@@ -49,5 +49,5 @@ export interface User {
   passwordHash: string;
   createdAt: Date;
   lastLogin?: Date | undefined;
+  lastActive?: Date | undefined;
 }
-
