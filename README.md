@@ -16,7 +16,7 @@ A RESTful backend service that uses **Google Gemini AI** to suggest personalized
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -167,7 +167,7 @@ src/
 
 ---
 
-## 📝 Notes
+## Notes
 
 - Meal history is capped at **100 entries** per user (oldest are auto-deleted)
 - Preference lists (likes/dislikes) are capped at **100 items** each
