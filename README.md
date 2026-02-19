@@ -1,10 +1,10 @@
-# 🍽️ AI Meal Planner API
+# AI Meal Planner API
 
 A RESTful backend service that uses **Google Gemini AI** to suggest personalized meal ideas based on a user's available ingredients, dietary preferences, and meal history. Built with Node.js, TypeScript, Express, and MongoDB.
 
 ---
 
-## ✨ Features
+## Features
 
 - **AI-Powered Meal Suggestions** — Integrates with Google Gemini 2.5 Flash to generate 3 diverse meal recommendations tailored to what you have on hand
 - **Smart Preference Learning** — Automatically detects and saves new likes/dislikes from meal feedback over time
@@ -29,7 +29,7 @@ A RESTful backend service that uses **Google Gemini AI** to suggest personalized
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -69,7 +69,7 @@ npm start
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### Auth
 
@@ -133,7 +133,7 @@ Content-Type: application/json
 
 ---
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 src/
@@ -159,7 +159,7 @@ src/
 
 ---
 
-## 🔐 Authentication Flow
+## Authentication Flow
 
 - Tokens are valid for **7 days** on initial login
 - Tokens are automatically refreshed (new token returned in `X-New-Token` header) when within **2 days of expiry**
